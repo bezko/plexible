@@ -1,0 +1,29 @@
+services:
+  plex:
+    image: plexinc/pms-docker:latest
+    container_name: plex
+    network_mode: host
+    environment:
+      - PLEX_UID=${PUID:-1000}
+      - PLEX_GID=${PGID:-1000}
+      - TZ=${TZ:-UTC}
+      - ADVERTISE_IP=${ADVERTISE_IP}
+    volumes:
+      - ./config/plex:/config
+      - ./transcode:/transcode
+      - ${MEDIA_PATH:-./media}:/data:ro
+    restart: unless-stopped
+    devices:
+      - /dev/dri:/dev/dri
+
+  caddy:
+    image: caddy:latest
+    container_name: caddy
+    network_mode: host
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy_data:/data
+      - ./caddy_config:/config
+    depends_on:
+      - plex
+    restart: unless-stopped
