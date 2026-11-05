@@ -16,6 +16,15 @@ services:
     devices:
       - /dev/dri:/dev/dri
 
+  local-proxy:
+    image: alpine/socat:latest
+    container_name: plex-local-proxy
+    network_mode: host
+    command: TCP-LISTEN:32402,fork,reuseaddr TCP:${LAN_IP:-127.0.0.1}:32400
+    depends_on:
+      - plex
+    restart: unless-stopped
+
   caddy:
     image: caddy:latest
     container_name: caddy
@@ -26,4 +35,5 @@ services:
       - ./caddy_config:/config
     depends_on:
       - plex
+      - local-proxy
     restart: unless-stopped

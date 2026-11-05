@@ -2,11 +2,11 @@
     # Global options
 }
 
-# Replace with your hostname/IP
+# Replace with your hostname
 :443 {
     tls internal
     
-    reverse_proxy 127.0.0.1:32400 {
+    reverse_proxy 127.0.0.1:32402 {
         # Strip forwarding headers that Plex uses to determine remote status
         header_up -X-Forwarded-For
         header_up -X-Forwarded-Host
@@ -22,10 +22,10 @@
         header_up -Referer
         header_up -Origin
         
-        # Ensure Host matches LAN IP for Plex recognition
-        header_up Host 127.0.0.1:32400
+        # Ensure Host matches for Plex recognition
+        header_up Host {http.request.host}
         
-        # Handle response headers
-        header_down -Location
+        # Rewrite Location headers
+        header_down Location {http.request.scheme}://{http.request.host}/web/index.html
     }
 }
