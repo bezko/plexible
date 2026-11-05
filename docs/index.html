@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PLEXIBLE — local by design</title>
+<meta name="description" content="Make Plex see your reverse-proxied clients as local. A tiny, transparent workaround for homelab reverse proxies.">
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎸</text></svg>">
+<style>
+  :root{
+    --ink:#08060f;
+    --ink-2:#100a20;
+    --violet:#6b1fd6;
+    --magenta:#ff2fa0;
+    --cyan:#25e0e6;
+    --acid:#c8ff3d;
+    --amber:#ffc857;
+    --paper:#efe8ff;
+    --muted:#a89fc9;
+    --line:rgba(239,232,255,.16);
+    --shadow:0 24px 60px rgba(0,0,0,.55);
+    --r:18px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;
+    color:var(--paper);
+    background:
+      radial-gradient(120% 80% at 50% -10%, #2a0b52 0%, rgba(42,11,82,0) 60%),
+      radial-gradient(90% 60% at 100% 0%, rgba(255,47,160,.22) 0%, rgba(255,47,160,0) 55%),
+      radial-gradient(80% 60% at 0% 20%, rgba(37,224,230,.16) 0%, rgba(37,224,230,0) 55%),
+      linear-gradient(180deg, var(--ink-2) 0%, var(--ink) 55%, #05040a 100%);
+    min-height:100vh;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  /* perspective grid floor */
+  .floor{
+    position:fixed; inset:auto 0 0 0; height:46vh; pointer-events:none; z-index:0;
+    background-image:
+      linear-gradient(to right, rgba(255,47,160,.35) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(37,224,230,.30) 1px, transparent 1px);
+    background-size:56px 56px, 56px 56px;
+    transform: perspective(520px) rotateX(66deg);
+    transform-origin: bottom center;
+    mask-image: linear-gradient(to top, rgba(0,0,0,.9), transparent 78%);
+    -webkit-mask-image: linear-gradient(to top, rgba(0,0,0,.9), transparent 78%);
+    opacity:.55;
+    animation: scrollFloor 22s linear infinite;
+  }
+  @keyframes scrollFloor{ to{ background-position: 0 56px, 0 56px; } }
+  .glow{
+    position:fixed; z-index:0; border-radius:50%; filter:blur(80px); pointer-events:none; opacity:.55;
+  }
+  .glow.a{ width:44vw; height:44vw; left:-8vw; top:-6vw; background:radial-gradient(circle, rgba(255,47,160,.55), transparent 65%); }
+  .glow.b{ width:40vw; height:40vw; right:-6vw; top:6vw; background:radial-gradient(circle, rgba(37,224,230,.45), transparent 65%); }
+
+  .wrap{ position:relative; z-index:2; width:min(1120px, 92vw); margin-inline:auto; }
+
+  /* ---------- hero ---------- */
+  header.hero{ padding: clamp(28px, 6vw, 72px) 0 clamp(18px, 3vw, 32px); }
+  .eyebrow{
+    display:inline-flex; align-items:center; gap:.6rem;
+    font-size:.72rem; letter-spacing:.34em; text-transform:uppercase;
+    color:var(--cyan); border:1px solid rgba(37,224,230,.35);
+    padding:.5rem .85rem; border-radius:999px;
+    background:rgba(37,224,230,.07);
+  }
+  .eyebrow::before{ content:""; width:7px; height:7px; border-radius:50%; background:var(--acid); box-shadow:0 0 12px var(--acid); }
+
+  h1.wordmark{
+    margin:.42em 0 .1em;
+    font-size: clamp(3.1rem, 13vw, 9.2rem);
+    line-height:.86;
+    letter-spacing:-.035em;
+    font-weight:900;
+    text-transform:uppercase;
+    background:linear-gradient(180deg,#ffffff 0%, #e8f7ff 22%, #9fd6ff 38%, #6b6bff 52%, #2b0f6b 66%, #ff8fdc 78%, #ffe9c7 92%, #fff 100%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    filter: drop-shadow(0 2px 0 rgba(0,0,0,.55)) drop-shadow(0 14px 32px rgba(107,31,214,.65));
+    position:relative;
+  }
+  h1.wordmark span{ display:inline-block; }
+  .subline{
+    display:flex; flex-wrap:wrap; gap:.75rem 1.4rem; align-items:center;
+    margin-top:1.1rem; color:var(--muted);
+    font-size:clamp(.95rem,1.7vw,1.12rem); letter-spacing:.02em;
+  }
+  .subline b{ color:var(--paper); font-weight:600; }
+  .strap{
+    display:inline-block; color:var(--acid); border:1px dashed rgba(200,255,61,.45);
+    padding:.28rem .6rem; border-radius:8px; font-size:.8rem; letter-spacing:.16em; text-transform:uppercase;
+  }
+
+  /* ---------- layout ---------- */
+  main{ padding-bottom: clamp(48px,8vw,110px); }
+  section{ margin-block: clamp(34px,6vw,72px); }
+  h2{
+    font-size:clamp(1.15rem,2.6vw,1.6rem); text-transform:uppercase; letter-spacing:.22em;
+    margin:0 0 1rem; font-weight:800; color:#fff;
+    display:flex; align-items:center; gap:.85rem;
+  }
+  h2::after{ content:""; flex:1; height:1px; background:linear-gradient(90deg, var(--line), transparent); }
+  p{ line-height:1.72; color:#cfc6ea; margin:.55em 0; }
+
+  .card{
+    background:linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.02));
+    border:1px solid var(--line);
+    border-radius:var(--r);
+    box-shadow:var(--shadow);
+    backdrop-filter: blur(10px) saturate(120%);
+    padding: clamp(18px,3vw,30px);
+  }
+
+  /* ---------- sleeve art ---------- */
+  .hero-grid{
+    display:grid; gap:clamp(18px,3vw,34px);
+    grid-template-columns: minmax(0,1.1fr) minmax(0,.9fr);
+    align-items:center;
+    margin-top: clamp(22px,4vw,42px);
+  }
+  @media (max-width:880px){ .hero-grid{ grid-template-columns:1fr; } }
+
+  .sleeve{
+    position:relative;
+    aspect-ratio:1/1;
+    border-radius:14px;
+    overflow:hidden;
+    box-shadow: 0 40px 90px rgba(0,0,0,.65), 0 0 0 1px rgba(255,255,255,.14) inset;
+    background: radial-gradient(120% 90% at 50% 0%, #3a1170 0%, #180a33 55%, #0a0616 100%);
+    isolation:isolate;
+  }
+  .sleeve::after{ /* sleeve sheen */
+    content:""; position:absolute; inset:0; pointer-events:none;
+    background:linear-gradient(115deg, rgba(255,255,255,.20) 0%, rgba(255,255,255,0) 32%, rgba(255,255,255,0) 62%, rgba(255,255,255,.10) 100%);
+    mix-blend-mode:screen;
+  }
+  .sleeve svg{ display:block; width:100%; height:100%; }
+  .sleeve .tag{
+    position:absolute; left:14px; bottom:12px; z-index:3;
+    font-size:.62rem; letter-spacing:.32em; text-transform:uppercase; color:#dcd3ff; opacity:.8;
+  }
+  .sleeve .sticker{
+    position:absolute; top:12px; right:12px; z-index:3;
+    font-size:.6rem; letter-spacing:.18em; text-transform:uppercase;
+    background:rgba(200,255,61,.92); color:#10160a; padding:.35rem .55rem; border-radius:4px;
+    font-weight:800; transform:rotate(3deg); box-shadow:0 6px 18px rgba(0,0,0,.4);
+  }
+
+  .hero-copy .pill-row{ display:flex; flex-wrap:wrap; gap:.5rem; margin-top:1.1rem; }
+  .pill{
+    font-size:.74rem; letter-spacing:.14em; text-transform:uppercase;
+    padding:.42rem .7rem; border-radius:999px;
+    border:1px solid var(--line); color:#ded6ff; background:rgba(255,255,255,.04);
+  }
+  .pill.hot{ border-color:rgba(255,47,160,.45); color:#ffd2ea; background:rgba(255,47,160,.10); }
+  .pill.cool{ border-color:rgba(37,224,230,.4); color:#c8fbff; background:rgba(37,224,230,.08); }
+
+  /* ---------- diagram ---------- */
+  pre.diagram{
+    margin:0; overflow-x:auto; padding:clamp(14px,2.4vw,22px);
+    background:linear-gradient(180deg, rgba(10,6,22,.9), rgba(8,6,15,.92));
+    border:1px solid rgba(255,47,160,.28);
+    border-radius:14px;
+    box-shadow: inset 0 0 0 1px rgba(37,224,230,.10), 0 18px 44px rgba(0,0,0,.5);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: clamp(.58rem, 1.55vw, .84rem);
+    line-height:1.5; color:#e8dcff;
+    white-space:pre;
+  }
+  pre.diagram .a{ color:var(--cyan); }
+  pre.diagram .b{ color:var(--magenta); }
+
+  /* ---------- steps ---------- */
+  ol.steps{ counter-reset:s; list-style:none; margin:0; padding:0; display:grid; gap:14px; }
+  ol.steps li{
+    counter-increment:s; position:relative; padding:16px 18px 16px 64px;
+    border:1px solid var(--line); border-radius:14px;
+    background:linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.015));
+  }
+  ol.steps li::before{
+    content:counter(s,decimal-leading-zero);
+    position:absolute; left:16px; top:15px;
+    font-weight:900; font-size:.9rem; letter-spacing:.06em;
+    color:#0d0718; background:linear-gradient(180deg,#bff7ff,#7bd9ff 40%,#ff8fdc);
+    padding:.28rem .45rem; border-radius:7px;
+    box-shadow:0 4px 14px rgba(123,217,255,.35);
+  }
+  ol.steps strong{ color:#fff; }
+
+  /* ---------- code ---------- */
+  .code-shell{ position:relative; }
+  pre.code{
+    margin:0; overflow-x:auto; padding:16px 18px; border-radius:14px;
+    background:#07050f; border:1px solid rgba(37,224,230,.22);
+    font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size:.82rem; line-height:1.65; color:#d8ccff;
+  }
+  pre.code .c{ color:#6f7ba8; }
+  pre.code .k{ color:#ff8fdc; }
+  pre.code .s{ color:#b6ff6a; }
+  .copy{
+    position:absolute; top:10px; right:10px;
+    font:inherit; font-size:.68rem; letter-spacing:.16em; text-transform:uppercase;
+    color:#cfc6ea; background:rgba(255,255,255,.07); border:1px solid var(--line);
+    padding:.4rem .6rem; border-radius:8px; cursor:pointer;
+    transition:background .18s ease, color .18s ease, border-color .18s ease;
+  }
+  .copy:hover{ background:rgba(255,47,160,.18); color:#fff; border-color:rgba(255,47,160,.5); }
+  .copy:focus-visible{ outline:2px solid var(--cyan); outline-offset:2px; }
+
+  /* ---------- warning / note ---------- */
+  .note{
+    border-left:3px solid var(--amber);
+    background:linear-gradient(90deg, rgba(255,200,87,.10), rgba(255,200,87,.02));
+    padding:14px 18px; border-radius:0 12px 12px 0; color:#f4e6c9;
+  }
+  .note b{ color:#fff; }
+
+  /* ---------- feature cards ---------- */
+  .cards{ display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); }
+  .cards .card h3{ margin:.1rem 0 .5rem; font-size:1rem; letter-spacing:.1em; text-transform:uppercase; color:#fff; }
+  .cards .card p{ margin:0; font-size:.95rem; color:#c3b9e2; }
+
+  /* ---------- footer ---------- */
+  footer{
+    border-top:1px solid var(--line); padding:28px 0 60px; color:var(--muted); font-size:.88rem;
+    display:flex; flex-wrap:wrap; gap:12px; justify-content:space-between; align-items:center;
+  }
+  footer a{ color:#d9d0ff; text-decoration:none; border-bottom:1px dashed rgba(217,208,255,.4); }
+  footer a:hover{ color:#fff; border-bottom-color:var(--magenta); }
+
+  a.btn{
+    display:inline-flex; align-items:center; gap:.55rem; text-decoration:none;
+    font-weight:800; font-size:.82rem; letter-spacing:.16em; text-transform:uppercase;
+    color:#12061f; padding:.85rem 1.15rem; border-radius:12px;
+    background:linear-gradient(180deg,#c9fbff,#7ce0ff 45%,#ff9ee0);
+    box-shadow:0 12px 30px rgba(124,224,255,.28), 0 0 0 1px rgba(255,255,255,.25) inset;
+    transition:transform .16s ease, box-shadow .16s ease;
+  }
+  a.btn:hover{ transform:translateY(-2px); box-shadow:0 18px 40px rgba(255,158,224,.32), 0 0 0 1px rgba(255,255,255,.35) inset; }
+  a.btn.ghost{
+    background:transparent; color:#e9e2ff; border:1px solid var(--line); box-shadow:none;
+  }
+  a.btn.ghost:hover{ border-color:rgba(255,47,160,.55); color:#fff; }
+
+  .sr-only{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0; }
+
+  @media (prefers-reduced-motion: reduce){
+    .floor{ animation:none; }
+    html{ scroll-behavior:auto; }
+    a.btn{ transition:none; }
+  }
+</style>
+</head>
+<body>
+<div class="glow a" aria-hidden="true"></div>
+<div class="glow b" aria-hidden="true"></div>
+<div class="floor" aria-hidden="true"></div>
+
+<div class="wrap">
+
+  <header class="hero">
+    <span class="eyebrow">homelab workaround · MIT-free · public domain</span>
+    <h1 class="wordmark">Plexible</h1>
+    <div class="subline">
+      <b>Local by design.</b>
+      <span class="strap">v1 · caddy + socat</span>
+      <span>Make Plex stop calling your reverse-proxied clients “remote”.</span>
+    </div>
+
+    <div class="hero-grid">
+      <div class="sleeve" role="img" aria-label="Original artwork: a chrome sphere above a neon perspective grid, flanked by geometric shards.">
+        <span class="sticker">No Plex Pass</span>
+        <span class="tag">plx-001 · stereo</span>
+        <svg viewBox="0 0 600 600" aria-hidden="true">
+          <defs>
+            <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#3a1170"/><stop offset=".55" stop-color="#1a0b36"/><stop offset="1" stop-color="#08050f"/>
+            </linearGradient>
+            <linearGradient id="sun" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#ffe9c7"/><stop offset=".45" stop-color="#ffc857"/><stop offset="1" stop-color="#ff2fa0"/>
+            </linearGradient>
+            <linearGradient id="chrome" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#ffffff"/><stop offset=".28" stop-color="#bff7ff"/>
+              <stop offset=".52" stop-color="#6b6bff"/><stop offset=".74" stop-color="#c04bd8"/><stop offset="1" stop-color="#ffe9c7"/>
+            </linearGradient>
+            <linearGradient id="grid" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#25e0e6" stop-opacity=".9"/><stop offset="1" stop-color="#ff2fa0" stop-opacity=".9"/>
+            </linearGradient>
+            <radialGradient id="sphere" cx=".35" cy=".28" r=".85">
+              <stop offset="0" stop-color="#ffffff"/><stop offset=".18" stop-color="#d8f7ff"/>
+              <stop offset=".42" stop-color="#7ba8ff"/><stop offset=".62" stop-color="#5b2bd0"/>
+              <stop offset=".82" stop-color="#241046"/><stop offset="1" stop-color="#0b0618"/>
+            </radialGradient>
+            <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
+              <feGaussianBlur stdDeviation="18"/>
+            </filter>
+          </defs>
+
+          <rect width="600" height="600" fill="url(#sky)"/>
+
+          <!-- starburst rays -->
+          <g opacity=".18" stroke="#bff7ff" stroke-width="1">
+            <path d="M300 240 L300 0"/><path d="M300 240 L520 60"/><path d="M300 240 L600 240"/>
+            <path d="M300 240 L520 430"/><path d="M300 240 L80 60"/><path d="M300 240 L0 240"/>
+            <path d="M300 240 L80 430"/>
+          </g>
+
+          <!-- sun -->
+          <g>
+            <circle cx="300" cy="250" r="120" fill="url(#sun)" opacity=".28" filter="url(#soft)"/>
+            <circle cx="300" cy="250" r="105" fill="url(#sun)" opacity=".92"/>
+            <g fill="#0a0616" opacity=".92">
+              <rect x="195" y="262" width="210" height="7"/>
+              <rect x="195" y="282" width="210" height="10"/>
+              <rect x="195" y="306" width="210" height="13"/>
+              <rect x="195" y="333" width="210" height="16"/>
+            </g>
+          </g>
+
+          <!-- chrome sphere -->
+          <g>
+            <ellipse cx="300" cy="452" rx="150" ry="26" fill="#000" opacity=".55" filter="url(#soft)"/>
+            <circle cx="300" cy="330" r="92" fill="url(#sphere)"/>
+            <ellipse cx="268" cy="296" rx="34" ry="22" fill="#fff" opacity=".55" filter="url(#soft)"/>
+            <circle cx="300" cy="330" r="92" fill="none" stroke="#ffffff" stroke-opacity=".35" stroke-width="1.5"/>
+          </g>
+
+          <!-- perspective grid -->
+          <g stroke="url(#grid)" stroke-width="1.4" opacity=".85">
+            <path d="M0 470 L600 470"/>
+            <path d="M0 500 L600 500"/><path d="M0 536 L600 536"/><path d="M0 578 L600 578"/>
+            <path d="M300 470 L300 600"/>
+            <path d="M300 470 L120 600"/><path d="M300 470 L200 600"/>
+            <path d="M300 470 L400 600"/><path d="M300 470 L480 600"/>
+            <path d="M300 470 L20 600"/><path d="M300 470 L580 600"/>
+          </g>
+
+          <!-- shards -->
+          <g opacity=".9">
+            <polygon points="86,166 132,196 96,238 62,204" fill="url(#chrome)" opacity=".95"/>
+            <polygon points="486,150 534,178 498,214 462,184" fill="url(#chrome)" opacity=".8"/>
+            <polygon points="120,392 152,410 128,438 102,418" fill="#c8ff3d" opacity=".85"/>
+            <polygon points="470,392 502,406 486,436 454,420" fill="#ff2fa0" opacity=".8"/>
+          </g>
+
+          <!-- guitar pick -->
+          <g transform="translate(508 258) rotate(18)">
+            <path d="M0 0 C26 -12 54 -6 58 18 C62 44 30 70 6 62 C-16 54 -22 12 0 0 Z" fill="url(#chrome)" opacity=".95"/>
+          </g>
+
+          <!-- wordmark plate -->
+          <g>
+            <rect x="42" y="512" width="336" height="52" rx="8" fill="#08060f" opacity=".72" stroke="#ffffff" stroke-opacity=".18"/>
+            <text x="60" y="548" font-family="ui-sans-serif, system-ui, sans-serif" font-size="30" font-weight="900" letter-spacing="4" fill="url(#chrome)">PLEXIBLE</text>
+          </g>
+        </svg>
+      </div>
+
+      <div class="hero-copy">
+        <p><b>Plex decides “local” from the source IP.</b> Put a proxy in front of it and the source becomes the proxy — so playback gets classified remote and Plex asks for a Pass.</p>
+        <p>Plexible inserts a tiny TCP hop that dials Plex <em>from a LAN address</em>, strips the headers Plex trusts over the socket, and fixes the redirect back. Nothing to patch, nothing to license.</p>
+        <div class="pill-row">
+          <span class="pill hot">header stripping</span>
+          <span class="pill cool">source-IP hop</span>
+          <span class="pill">location rewrite</span>
+          <span class="pill">docker compose</span>
+        </div>
+        <p style="margin-top:1.4rem; display:flex; gap:.7rem; flex-wrap:wrap;">
+          <a class="btn" href="https://github.com/bezko/plexible">Get the repo →</a>
+          <a class="btn ghost" href="#how">How it works</a>
+        </p>
+      </div>
+    </div>
+  </header>
+
+  <main>
+
+    <section id="how">
+      <h2>The signal chain</h2>
+      <div class="card">
+<pre class="diagram">  ┌───────────────────────┐     ┌───────────────────────┐     ┌───────────────────────┐     ┌───────────────────────┐
+│         Client        │────>│         Caddy         │────>│      Local Proxy      │────>│          Plex         │
+│                       │     │    (Reverse Proxy)    │     │      (Container)      │     │     (Media Server)    │
+└───────────────────────┘     └───────────────────────┘     └───────────────────────┘     └───────────────────────┘
+            │                             │                             │                             │
+ HTTPS request                      Strip headers              Connect from LAN IP             Sees LAN source
+                                   Rewrite headers                                           Classifies as local</pre>
+      </div>
+      <p style="margin-top:1rem">Caddy terminates TLS and deletes every header Plex would use to guess the real client (<code>X-Forwarded-For</code>, <code>X-Real-IP</code>, <code>X-Plex-Forwarded-For</code>, <code>Forwarded</code>, <code>Referer</code>, <code>Origin</code>). The proxy container then opens a <em>new</em> socket to Plex using a LAN source address, so the only thing Plex can classify on is that local source.</p>
+    </section>
+
+    <section>
+      <h2>Three moves</h2>
+      <div class="cards">
+        <div class="card">
+          <h3>01 · Strip</h3>
+          <p>Plex prefers forwarded headers over the socket address. Delete them and the socket wins.</p>
+        </div>
+        <div class="card">
+          <h3>02 · Hop</h3>
+          <p>A socat container listens on a spare port and dials Plex from the host’s LAN IP, not from loopback or a bridge.</p>
+        </div>
+        <div class="card">
+          <h3>03 · Rewrite</h3>
+          <p>Plex’s redirect still points at the internal URL. Caddy rewrites <code>Location</code> back to the public name.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="quickstart">
+      <h2>Quick start</h2>
+      <div class="card">
+        <ol class="steps">
+          <li><strong>Clone</strong> the repo and copy <code>.env.example</code> to <code>.env</code>.</li>
+          <li><strong>Set</strong> <code>LAN_IP</code> to the host address Plex already trusts, and put your proxy hostname in <code>ADVERTISE_IP</code>.</li>
+          <li><strong>Point</strong> Caddy at the local proxy port and keep the strip/rewrite headers.</li>
+          <li><strong>Configure Plex</strong>: allowed networks must cover your LAN, custom connections must include the proxy URL.</li>
+          <li><strong>Verify</strong> in the Plex log: requests should read <code>(Subnet)</code>, never <code>(WAN)</code>.</li>
+        </ol>
+        <div class="code-shell" style="margin-top:18px">
+          <button class="copy" data-copy="compose" type="button">Copy</button>
+<pre class="code" id="compose"><span class="c"># docker-compose.yml (excerpt)</span>
+services:
+  <span class="k">local-proxy</span>:
+    image: <span class="s">docker.io/alpine/socat:latest</span>
+    network_mode: host
+    command: <span class="s">TCP-LISTEN:32402,fork,reuseaddr TCP:${LAN_IP}:32400</span>
+    restart: unless-stopped
+
+  <span class="k">caddy</span>:
+    image: <span class="s">docker.io/library/caddy:latest</span>
+    network_mode: host
+    volumes: [ <span class="s">"./Caddyfile:/etc/caddy/Caddyfile:z"</span> ]</pre>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Caddyfile</h2>
+      <div class="card code-shell">
+        <button class="copy" data-copy="caddy" type="button">Copy</button>
+<pre class="code" id="caddy">https://<span class="s">plex.example.net</span> {
+    tls internal
+    reverse_proxy <span class="s">127.0.0.1:32402</span> {
+        <span class="c"># headers Plex trusts more than the socket</span>
+        header_up -X-Forwarded-For
+        header_up -X-Forwarded-Host
+        header_up -X-Forwarded-Proto
+        header_up -X-Real-IP
+        header_up -X-Plex-Forwarded-For
+        header_up -Forwarded
+        header_up -Referer
+        header_up -Origin
+
+        <span class="c"># send the browser back to the public name</span>
+        header_down Location https://<span class="s">plex.example.net</span>/web/index.html
+    }
+}</pre>
+      </div>
+      <div class="note" style="margin-top:16px">
+        <b>Why this is robust:</b> it does not depend on which VPN, tunnel or overlay you put in front. If the last hop to Plex is a LAN socket and no forwarding headers survive, Plex classifies it local — tailscale, wireguard, cloudflared, whatever.
+      </div>
+    </section>
+
+    <section>
+      <h2>Reading Plex’s log</h2>
+      <div class="card">
+<pre class="code"><span class="c"># local — good</span>
+DEBUG - Request: [192.168.1.10:52334 (Allowed Network (Subnet))] GET /identity
+<span class="c"># remote — the thing we are fixing</span>
+DEBUG - Request: [100.64.0.7:52334 (WAN)] GET /identity</pre>
+        <p style="margin-top:1rem">If the source is <code>127.0.0.1</code> you will see <code>(Loopback)</code>, which Plex also treats as local — but a real LAN address is more predictable across versions.</p>
+      </div>
+    </section>
+
+    <section>
+      <h2>Caveats, honestly</h2>
+      <div class="note">
+        <b>This is a workaround, not a promise.</b> Plex changes its classification logic between releases, and 2026 builds enforce remote access server-side. Plexible fixes the local/remote <em>signal</em>; it cannot override an account-level entitlement. Test after every Plex upgrade. Use it on networks you own, and respect Plex’s terms.
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
+    <span>Plexible · released into the public domain under <a href="https://unlicense.org">The Unlicense</a></span>
+    <span><a href="https://github.com/bezko/plexible">github.com/bezko/plexible</a></span>
+  </footer>
+
+</div>
+
+<script>
+  document.querySelectorAll('.copy').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var el = document.getElementById(btn.dataset.copy);
+      if (!el) return;
+      var text = el.innerText;
+      var done = function () {
+        var old = btn.textContent;
+        btn.textContent = 'Copied';
+        setTimeout(function () { btn.textContent = old; }, 1400);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, done);
+      } else {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); } catch (e) {}
+        document.body.removeChild(ta);
+        done();
+      }
+    });
+  });
+</script>
+</body>
+</html>
