@@ -38,13 +38,14 @@ The key insight is that Plex trusts forwarded headers over the socket source IP 
 ## Solution Architecture
 
 ```
-┌───────────────────────┐     ┌───────────────────────┐     ┌───────────────────────┐     ┌───────────────────────┐
-│         Client        │────▶│         Caddy         │────▶│      Local Proxy      │────▶│          Plex         │
-│                       │     │    (Reverse Proxy)    │     │      (Container)      │     │     (Media Server)    │
-└───────────────────────┘     └───────────────────────┘     └───────────────────────┘     └───────────────────────┘
-            │                             │                             │                             │
- HTTPS request                 Strip headers                 Connect from LAN IP           Sees LAN source
-                               Rewrite headers                                             Classifies as local
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│     Client      │────▶│      Caddy      │────▶│   Local Proxy   │────▶│      Plex       │
+│                 │     │  (Reverse Proxy)│     │   (Container)   │     │ (Media Server)  │
+└─────────────────┘     └─────────────────┘     └─────────────────┘     └─────────────────┘
+         │                       │                       │                       │
+         │  HTTPS Request        │  Strip Headers        │  Connect from LAN IP │  Sees LAN source
+         │                       │  Rewrite Headers      │                       │  Classifies as local
+         │                       │                       │                       │
 ```
 
 ### Components
