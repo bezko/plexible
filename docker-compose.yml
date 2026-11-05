@@ -17,7 +17,7 @@ services:
       - /dev/dri:/dev/dri
 
   local-proxy:
-    image: alpine/socat:latest
+    image: docker.io/alpine/socat:latest
     container_name: plex-local-proxy
     network_mode: host
     command: TCP-LISTEN:32402,fork,reuseaddr TCP:${LAN_IP:-127.0.0.1}:32400
@@ -26,13 +26,14 @@ services:
     restart: unless-stopped
 
   caddy:
-    image: caddy:latest
+    image: docker.io/library/caddy:latest
     container_name: caddy
     network_mode: host
+    user: "0:0"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./caddy_data:/data
-      - ./caddy_config:/config
+      - ./Caddyfile:/etc/caddy/Caddyfile:z
+      - ./caddy_data:/data:z
+      - ./caddy_config:/config:z
     depends_on:
       - plex
       - local-proxy
