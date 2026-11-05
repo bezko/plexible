@@ -1,0 +1,6 @@
+.env
+config/
+transcode/
+media/
+caddy_data/
+caddy_config/
