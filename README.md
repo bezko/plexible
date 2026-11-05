@@ -38,29 +38,29 @@ The key insight is that Plex trusts forwarded headers over the socket source IP 
 ## Solution Architecture
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   Client     │────▶│    Caddy     │────▶│  Local Proxy │────▶│     Plex     │
-│              │     │ (Reverse     │     │  (IP Spoof)  │     │  (host net)  │
-└─────────────┘     │  Proxy)      │     └─────────────┘     └─────────────┘
-                    └─────────────┘            │                     │
-                           │                    │                     │
-                        Strips headers    Source appears as    Sees LAN IP
-                        Sets Host to LAN   LAN IP subnet        Classifies as local
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│     Client      │────▶│      Caddy      │────▶│   Local Proxy   │────▶│      Plex       │
+│                 │     │  (Reverse Proxy)│     │   (Container)   │     │ (Media Server)  │
+└─────────────────┘     └─────────────────┘     └─────────────────┘     └─────────────────┘
+         │                       │                       │                       │
+         │  HTTPS Request        │  Strip Headers        │  Connect from LAN IP │  Sees LAN source
+         │                       │  Rewrite Headers      │                       │  Classifies as local
+         │                       │                       │                       │
 ```
 
 ### Components
 
 1. **Reverse Proxy (Caddy)**: Terminates TLS, routes requests, strips identifying headers
-2. **Network Translation (nftables/iptables)**: Redirects traffic so Plex sees LAN source IPs
-3. **Header Manipulation**: Removes forwarded headers Plex uses for remote detection
-4. **Plex Configuration**: Properly configured networks and connections
+2. **Local Proxy (Container)**: Makes connections to Plex from a LAN IP address, ensuring proper source IP presentation
+3. **Network Translation (nftables/iptables)**: Optional redirection rules for traffic routing
+4. **Plex Media Server**: Configured to recognize local network ranges
 
 ## Prerequisites
 
 - Docker and Docker Compose
 - Plex Media Server
-- A reverse proxy (Caddy included in compose)
-- Network access to modify routing/firewall rules (for DNAT approach)
+- A reverse proxy setup
+- Network access to modify routing/firewall rules (for advanced scenarios)
 
 ## Installation
 
@@ -78,39 +78,23 @@ Edit `.env` with your settings:
 ```env
 PUID=1000
 PGID=1000
-TZ=America/New_York
-MEDIA_PATH=/path/to/your/media
-ADVERTISE_IP=http://192.168.1.100:32400,https://plex.yourdomain.com
+TZ=UTC
+MEDIA_PATH=./media
+LAN_IP=192.168.1.100
+ADVERTISE_IP=http://192.168.1.100:32400,https://your-proxy-hostname
 ```
 
 ### 3. Configure Caddy
 
-Edit `Caddyfile` to set your hostname and ensure proper header manipulation:
-
-```caddyfile
-your-hostname {
-    tls internal
-    reverse_proxy 127.0.0.1:32400 {
-        header_up Host 127.0.0.1:32400
-        header_up -X-Forwarded-For
-        header_up -X-Forwarded-Host
-        header_up -X-Forwarded-Proto
-        header_up -Referer
-        header_up -Origin
-        header_up -X-Real-IP
-        header_down -Location
-    }
-}
-```
+Edit `Caddyfile` with your configuration. The setup routes through a local proxy container to ensure proper source IP handling.
 
 ### 4. Configure Plex
 
-Access Plex at `http://localhost:32400/web` and go to Settings > Network:
-
-- **Secure connections**: Preferred (or as needed)
-- **Allowed Networks**: Add your LAN subnets, e.g., `192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,127.0.0.1`
+Access Plex and go to Settings > Network:
+- **Secure connections**: Preferred
+- **Allowed Networks**: Add your LAN subnets (e.g., `192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,127.0.0.1`)
 - **Custom server access URLs**: Add your proxy URLs
-- **Treat WAN IP As Local**: Enable if needed
+- **Treat WAN IP As Local**: Enable as needed
 
 ### 5. Start Services
 
@@ -122,7 +106,7 @@ docker compose up -d
 
 ### Header Stripping (Critical)
 
-Plex prioritizes forwarded headers. You MUST strip these:
+Plex prioritizes forwarded headers. Strip these headers in your reverse proxy:
 
 - `X-Forwarded-For` - Contains original client IP
 - `X-Forwarded-Host` - Original host
@@ -134,30 +118,15 @@ Plex prioritizes forwarded headers. You MUST strip these:
 
 ### Host Header
 
-Set `Host` to match a local IP that Plex recognizes as local, or ensure it matches entries in customConnections.
+Set `Host` to match a local IP address that Plex recognizes as local. This prevents Plex from treating the request as coming through a foreign host.
 
 ### Location Header Rewriting
 
-Plex often sends redirects with LAN IPs. Rewrite these to use your proxy hostname:
+Plex often sends redirects with internal/LAN IPs. Rewrite these to use your proxy hostname.
 
-```caddyfile
-header_down Location https://your-hostname/web/index.html
-```
+### Local Proxy Container
 
-### Network Translation (Advanced)
-
-For cases where traffic comes in on specific interfaces, use nftables:
-
-```nft
-table ip plex_local {
-    chain prerouting {
-        type nat hook prerouting priority dstnat; policy accept;
-        iifname "your-interface" ip saddr your.subnet/24 tcp dport 32400 dnat to 127.0.0.1:PORT
-    }
-}
-```
-
-Load with `nft -f nftables-plex.conf`
+The local proxy container connects to Plex from a LAN IP address on the same network, ensuring Plex sees requests originating from a local subnet rather than from localhost or container networks.
 
 ## Troubleshooting
 
@@ -175,34 +144,34 @@ docker logs plex | grep -E 'Request.*\(WAN\)|Request.*\(Subnet\)|Request.*\(Loop
 
 **Still classified as WAN:**
 - Check X-Forwarded-For headers are being stripped
-- Verify source IP is in allowedNetworks
-- Ensure Plex sees requests from LAN subnet IP
+- Verify source IP is in allowedNetworks  
+- Ensure requests come from LAN subnet IP
 - Check customConnections includes your proxy URL
 
 **"Not hosted by Plex" warning:**
 - Add proxy hostname to customConnections
 - Set Secure Connections appropriately
-- Ensure Host header is properly configured
+- Ensure Host header matches recognized values
 
-**Redirects go to LAN IP:**
-- Use header_down to rewrite Location headers
-- Update customConnections
+**Redirects go to unexpected IPs:**
+- Use header_down to rewrite Location headers in your proxy
 
 ## Technical Details
 
 ### Why This Works
 
-1. **Source IP Spoofing via DNAT**: By routing traffic through a local proxy that connects to Plex from 127.0.0.1 or a LAN IP, Plex sees a local source IP
-2. **Header Stripping**: Removing forwarded headers prevents Plex from using them to determine the original remote client IP
-3. **Subnet Matching**: If source IP is in same subnet as Plex's interfaces and in allowedNetworks, Plex classifies as local
-4. **Host Recognition**: Proper customConnections configuration prevents security warnings
+1. **Source IP Control**: Using a local proxy container on the LAN network ensures Plex sees requests from LAN IP addresses
+2. **Header Stripping**: Removing forwarded headers prevents Plex from inferring the original remote client IP
+3. **Subnet Matching**: When the source IP is in the same subnet as Plex's interfaces and included in allowedNetworks, Plex classifies as local
+4. **Host Recognition**: Proper configuration of customConnections and Host headers satisfies Plex's validation
 
-### Network Modes
+### Network Architecture
 
-- **host**: Simplest, Plex uses host networking directly
-- **bridge**: More isolated but requires additional port mapping and may complicate DNAT
-
-This solution works best with host networking or careful bridge configuration with proper routing.
+The solution uses a dedicated local proxy container that:
+- Runs on the host/LAN network
+- Accepts connections from the reverse proxy
+- Forwards requests to Plex using a LAN source IP
+- Strips or rewrites headers as needed
 
 ## License
 
