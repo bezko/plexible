@@ -2,6 +2,8 @@
 
 A solution for accessing Plex Media Server as a local network client when proxying through reverse proxies, eliminating remote access restrictions without requiring Plex Pass.
 
+**Project site:** https://bezko.github.io/plexible/
+
 ## Table of Contents
 
 - [Problem Statement](#problem-statement)
